@@ -74,7 +74,8 @@ router.post("/new", async (req, res) => {
   try {
     //Verify the given email is valid
     if (
-      req.body.player1 === req.body.player2 || !(
+      req.body.player1 === req.body.player2 ||
+      !(
         (await User.exists({ email: req.body.player1 })) &&
         (await User.exists({ email: req.body.player2 }))
       )
@@ -118,6 +119,70 @@ router.post("/new", async (req, res) => {
       result: newGame,
       code: 0,
     });
+  } catch (err) {
+    //in case of any error
+    res.status(500).send({
+      message: "Something went wrong",
+      error: err.message,
+      code: -1,
+    });
+    console.log(err);
+  }
+});
+
+//PUT REQUESTS
+router.put("/play/:id/:piece", async (req, res) => {
+  try {
+    //find entries of the specified game id in the database
+    const gameInfo = await Game.findOne({ _id: req.params.id });
+
+    //return not found if the game is not found
+    if (!gameInfo) {
+      return res.status(404).send({
+        message: "Game does not exist",
+        code: 1,
+      });
+    }
+
+    //get and update state
+    let board = gameInfo.board;
+    board[req.body.box] = req.params.piece;
+
+    //Update the gameinfo to include the latest move
+    await Game.updateOne({ id: req.params.id }, { $set: { board: board } });
+
+    //Check if the game has been won by any player
+    let gameWon = false;
+    const winningCombinations = [
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [0, 3, 6],
+      [1, 4, 7],
+      [2, 5, 8],
+      [0, 4, 8],
+      [2, 4, 6],
+    ];
+    for (const combination of winningCombinations) {
+      if (
+        board[combination[0]] === board[combination[1]] &&
+        board[combination[1]] === board[combination[2]]
+      ) {
+        gameWon = true;
+        break;
+      }
+    }
+
+    if (gameWon) {
+      //Update the game state to reflect that the game has been won by the current player
+      let state = `win/${req.params.piece === "x" ? "p1" : "p2"}`;
+      await Game.updateOne({ id: req.params.id }, { $set: { state: state } });
+    } else {
+      await Game.updateOne(
+        { id: req.params.id },
+        { $set: { state: "wait/" + req.params.piece === "x" ? "p2" : "p1" } }
+      );
+    }
   } catch (err) {
     //in case of any error
     res.status(500).send({
